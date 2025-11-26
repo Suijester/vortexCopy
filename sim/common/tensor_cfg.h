@@ -200,7 +200,9 @@ public:
 
   static constexpr uint32_t tcM = 1u << block_em;
   static constexpr uint32_t tcN = 1u << block_en;
-  static constexpr uint32_t tcK = 4; // to match 2:4, we require K be 4-grouped
+  static constexpr uint32_t tcK = (DP != 0) ? DP : (block_cap / ((tcM > tcN) ? tcM : tcN));
+
+  static_assert(tcK % 4 == 0, "tcK must be divisible by 4 to perform 2:4 sparsity");
 
   static constexpr uint32_t m_steps = xtileM / tcM;  // number of M steps per register
   static constexpr uint32_t n_steps = xtileN / tcN;  // number of N steps per register
@@ -217,15 +219,16 @@ public:
   static constexpr uint32_t NRA = (xtileM * xtileK) / NT; // Number of A registers
   static constexpr uint32_t NRB = (xtileN * xtileK) / NT; // Number of B registers
   static constexpr uint32_t NRC = (xtileM * xtileN) / NT; // Number of C registers
+  static constexpr uint32_t NRM = tcM;                    // Number of Metadata registers
 
-  // static_assert((m_steps / a_sub_blocks) != 0, "tcK is too small for tile A"); (spmma has a unique tcK)
+  static_assert((m_steps / a_sub_blocks) != 0, "tcK is too small for tile A");
   static_assert((n_steps / b_sub_blocks) != 0, "tcK is too small for tile B");
 
   static_assert((xtileM * xtileK <= tile_cap), "xtileM * xtileK <= tile_cap");
   static_assert((xtileN * xtileK <= tile_cap), "xtileN * xtileK <= tile_cap");
   static_assert((xtileM * xtileN <= tile_cap), "xtileM * xtileN <= tile_cap");
 
-  // static_assert((tcM * tcK <= block_cap), "tcM * tcK <= block_cap"); (spmma has a unique tcK)
+  static_assert((tcM * tcK <= block_cap), "tcM * tcK <= block_cap");
   static_assert((tcN * tcK <= block_cap), "tcN * tcK <= block_cap");
   static_assert((tcM * tcN <= block_cap), "tcM * tcN <= block_cap");
 
