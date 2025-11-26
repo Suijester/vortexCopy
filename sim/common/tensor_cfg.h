@@ -216,10 +216,12 @@ public:
   static constexpr uint32_t b_sub_blocks = block_cap / b_block_size;  // number of B micro-tiles per register
   static constexpr uint32_t b_sub_steps  = n_steps / b_sub_blocks;    // number of B sub-steps per register
 
-  static constexpr uint32_t NRA = (xtileM * xtileK) / NT; // Number of A registers
-  static constexpr uint32_t NRB = (xtileN * xtileK) / NT; // Number of B registers
-  static constexpr uint32_t NRC = (xtileM * xtileN) / NT; // Number of C registers
-  static constexpr uint32_t NRM = tcM;                    // Number of Metadata registers
+  static constexpr uint32_t NRA = (xtileM * xtileK) / NT;        // Number of A registers
+  static constexpr uint32_t NRSA = (xtileM * xtileK) / (NT * 2); // Number of A registers (sparse)
+  static constexpr uint32_t NRM = NRA - NRSA;                    // Number of M registers
+  static constexpr uint32_t NRB = (xtileN * xtileK) / NT;        // Number of B registers
+  static constexpr uint32_t NRC = (xtileM * xtileN) / NT;        // Number of C registers
+  static_assert((NRA % 2 == 0), "SPMMA Config: NRA must be divisible by 2, to enable pruning");
 
   static_assert((m_steps / a_sub_blocks) != 0, "tcK is too small for tile A");
   static_assert((n_steps / b_sub_blocks) != 0, "tcK is too small for tile B");

@@ -405,6 +405,7 @@ public:
   }
 };
 
+// sparse matmul context
 template <uint32_t NT, // number of threads per warp
           typename It, // input type (A,B)
           typename Ot> // output type (C,D)
@@ -412,7 +413,7 @@ struct spmma_context {
 private:
   using cfg = spmma_config_t<NT>;
 
-  enum frag_use_t { matrix_a, matrix_b, accumulator };
+  enum frag_use_t { pruned_matrix_a, metadata, matrix_b, accumulator }; // additional metadata fragment
 
   using vreg_t = float;
 
@@ -439,9 +440,10 @@ public:
   static constexpr uint32_t tileN = cfg::tileN;
   static constexpr uint32_t tileK = cfg::tileK * i_ratio;
 
-  using fragment_a   = fragment_t<matrix_a, input_t, cfg::NRA>;
-  using fragment_b   = fragment_t<matrix_b, input_t, cfg::NRB>;
-  using fragment_acc = fragment_t<accumulator, output_t, cfg::NRC>;
+  using fragment_a         = fragment_t<pruned_matrix_a, input_t, cfg::NRSA>;
+  using fragment_metadata  = fragment_t<metadata, input_t, cfg::NRM>;
+  using fragment_b         = fragment_t<matrix_b, input_t, cfg::NRB>;
+  using fragment_acc       = fragment_t<accumulator, output_t, cfg::NRC>;
 
   template <typename Frag, typename T>
   static __attribute__((always_inline)) void fill_fragment(Frag &dst, T value) {
@@ -458,10 +460,11 @@ public:
     });
   }
 
+  // updated load_matrix (sparse version)
   template <mem_layout src_layout = row_major, typename Frag>
-  static __attribute__((always_inline)) void load_matrix_sync(Frag &dst, const void *src, size_t ldm) {
+  static __attribute__((always_inline)) void load_sparse_matrix_sync(Frag &dst, const void *src, size_t ldm) {
     uint32_t lane = vx_thread_id();
-    if constexpr (Frag::Use == matrix_a) {
+    if constexpr (Frag::Use == pruned_matrix_a) {
       // Load row-major matrix A
       uint32_t block_idx = (cfg::a_block_size == NT) ? 0 : (lane / cfg::a_block_size);
       uint32_t lane_in_blk = (cfg::a_block_size == NT) ? lane : (lane % cfg::a_block_size);
@@ -587,22 +590,25 @@ public:
     });
   }
 
-  template <typename FragD, typename FragA, typename FragB, typename FragC>
-  static __attribute__((always_inline)) void mma_sync(FragD &fragD, const FragA &fragA, const FragB &fragB, const FragC &fragC) {
-    static_assert(FragA::Use == matrix_a, "A must be matrix_a");
+  template <typename FragD, typename FragA, typename FragM, typename FragB, typename FragC>
+  static __attribute__((always_inline)) void sparse_mma_sync(FragD &fragD, const FragA &fragA, const FragM &fragM, const FragB &fragB, const FragC &fragC) {
+    static_assert(FragA::Use == pruned_matrix_a, "A must be pruned_matrix_a");
+    static_assert(FragM::Use == metadata, "M must be metadata");
     static_assert(FragB::Use == matrix_b, "B must be matrix_b");
     static_assert(FragC::Use == accumulator, "C must be accumulator");
     static_assert(FragD::Use == accumulator, "D must be accumulator");
 
-    // fragA: caller-saved registers (f0-f7)
+    // fragA: caller-saved registers (f0-f3)
     register float fa0 __asm__("f0")  = fragA.data[0];
     register float fa1 __asm__("f1")  = fragA.data[1];
     register float fa2 __asm__("f2")  = fragA.data[2];
     register float fa3 __asm__("f3")  = fragA.data[3];
-    register float fa4 __asm__("f4")  = fragA.data[4];
-    register float fa5 __asm__("f5")  = fragA.data[5];
-    register float fa6 __asm__("f6")  = fragA.data[6];
-    register float fa7 __asm__("f7")  = fragA.data[7];
+
+    // fragM: caller-saved registers (f4-f7)
+    register float fm0 __asm__("f4")  = fragM.data[0];
+    register float fm1 __asm__("f5")  = fragM.data[1];
+    register float fm2 __asm__("f6")  = fragM.data[2];
+    register float fm3 __asm__("f7")  = fragM.data[3];
 
     if constexpr (FragB::NR == 8) {
       // fragB: caller-saved registers (f10-f17)
@@ -635,10 +641,10 @@ public:
       register float fd6 __asm__("f30");
       register float fd7 __asm__("f31");
 
-      __asm__ volatile (".insn r %[insn], 0, 2, x%[fmd], x%[fms], x0"
+      __asm__ volatile (".insn r %[insn], 1, 2, x%[fmd], x%[fms], x0" // modified funct3 = 1
         : "=f"(fd0), "=f"(fd1), "=f"(fd2), "=f"(fd3), "=f"(fd4), "=f"(fd5), "=f"(fd6), "=f"(fd7)
         : [insn]"i"(RISCV_CUSTOM0), [fmd]"i"(Ot::id), [fms]"i"(It::id),
-          "f"(fa0), "f"(fa1), "f"(fa2), "f"(fa3), "f"(fa4), "f"(fa5), "f"(fa6), "f"(fa7),
+          "f"(fa0), "f"(fa1), "f"(fa2), "f"(fa3), "f"(fm0), "f"(fm1), "f"(fm2), "f"(fm3),
           "f"(fb0), "f"(fb1), "f"(fb2), "f"(fb3), "f"(fb4), "f"(fb5), "f"(fb6), "f"(fb7),
           "f"(fc0), "f"(fc1), "f"(fc2), "f"(fc3), "f"(fc4), "f"(fc5), "f"(fc6), "f"(fc7)
       );
@@ -673,10 +679,10 @@ public:
       register float fd6 __asm__("f16");
       register float fd7 __asm__("f17");
 
-      __asm__ volatile (".insn r %[insn], 0, 2, x%[fmd], x%[fms], x0"
+      __asm__ volatile (".insn r %[insn], 1, 2, x%[fmd], x%[fms], x0" 
         : "=f"(fd0), "=f"(fd1), "=f"(fd2), "=f"(fd3), "=f"(fd4), "=f"(fd5), "=f"(fd6), "=f"(fd7)
         : [insn]"i"(RISCV_CUSTOM0), [fmd]"i"(Ot::id), [fms]"i"(It::id),
-          "f"(fa0), "f"(fa1), "f"(fa2), "f"(fa3), "f"(fa4), "f"(fa5), "f"(fa6), "f"(fa7),
+          "f"(fa0), "f"(fa1), "f"(fa2), "f"(fa3), "f"(fm0), "f"(fm1), "f"(fm2), "f"(fm3),
           "f"(fb0), "f"(fb1), "f"(fb2), "f"(fb3),
           "f"(fc0), "f"(fc1), "f"(fc2), "f"(fc3), "f"(fc4), "f"(fc5), "f"(fc6), "f"(fc7)
       );
