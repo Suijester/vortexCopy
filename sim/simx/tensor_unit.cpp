@@ -227,6 +227,9 @@ public:
       case TcuType::WMMA:
         delay = 4;
         break;
+      case TcuType::SPMMA:
+        delay = 4;
+        break;
       default:
         std::abort();
       }
@@ -237,6 +240,47 @@ public:
   }
 
   void wmma(uint32_t wid,
+            uint32_t fmt_s,
+            uint32_t fmt_d,
+            uint32_t step_m,
+            uint32_t step_n,
+            const std::vector<reg_data_t>& rs1_data,
+            const std::vector<reg_data_t>& rs2_data,
+            const std::vector<reg_data_t>& rs3_data,
+            std::vector<reg_data_t>& rd_data,
+            ExeTraceData* trace_data) {
+    __unused(wid);
+    __unused(trace_data);
+
+    auto fedp = select_FEDP(fmt_s, fmt_d);
+
+    uint32_t a_off = (step_m % cfg::a_sub_blocks) * cfg::a_block_size;
+    uint32_t b_off = (step_n % cfg::b_sub_blocks) * cfg::b_block_size;
+
+    for (uint32_t i = 0; i < cfg::tcM; ++i) {
+      for (uint32_t j = 0; j < cfg::tcN; ++j) {
+        auto a_row = rs1_data.data() + a_off + i * cfg::tcK;
+        auto b_col = rs2_data.data() + b_off + j * cfg::tcK;
+        auto c_val = rs3_data.at(i * cfg::tcN + j).u32;
+        auto d_val = fedp(a_row, b_col, c_val);
+        rd_data.at(i * cfg::tcN + j).u64 = nan_box(d_val);
+
+        DTH(3, "FEDP: wid=" << wid << ", i=" << i << ", j=" << j << ", m=" << step_m << ", n=" << step_n << ", a_row={" << std::hex);
+        for (uint32_t q = 0; q < cfg::tcK; ++q) {
+          if (q) DTN(3, ", ");
+          DTN(3, "0x" << a_row[q].u32);
+        }
+        DTN(3, "}, b_col={");
+        for (uint32_t q = 0; q < cfg::tcK; ++q) {
+          if (q) DTN(3, ", ");
+          DTN(3, "0x" << b_col[q].u32);
+        }
+        DTN(3, "}, c_val=0x" << c_val << ", d_val=0x" << d_val << std::dec << std::endl);
+      }
+    }
+  }
+
+  void spmma(uint32_t wid,
             uint32_t fmt_s,
             uint32_t fmt_d,
             uint32_t step_m,
@@ -296,6 +340,10 @@ op_string_t vortex::op_string(TcuType tcu_type, IntrTcuArgs args) {
   case TcuType::WMMA:
     return {"WMMA." + std::string(vt::fmt_string(args.fmt_s)) + "." + std::string(vt::fmt_string(args.fmt_d))
              + "." + std::to_string(args.step_m) + "." + std::to_string(args.step_n), ""};
+
+  case TcuType::SPMMA:
+    return {"SPMMA." + std::string(vt::fmt_string(args.fmt_s)) + "." + std::string(vt::fmt_string(args.fmt_d))
+             + "." + std::to_string(args.step_m) + "." + std::to_string(args.step_n), ""};
   default:
     std::abort();
   }
@@ -337,4 +385,17 @@ void TensorUnit::wmma(uint32_t wid,
                       std::vector<reg_data_t>& rd_data,
                       ExeTraceData* trace_data) {
   impl_->wmma(wid, fmt_s, fmt_d, step_m, step_n, rs1_data, rs2_data, rs3_data, rd_data, trace_data);
+}
+
+void TensorUnit::spmma(uint32_t wid,
+                      uint32_t fmt_s,
+                      uint32_t fmt_d,
+                      uint32_t step_m,
+                      uint32_t step_n,
+                      const std::vector<reg_data_t>& rs1_data,
+                      const std::vector<reg_data_t>& rs2_data,
+                      const std::vector<reg_data_t>& rs3_data,
+                      std::vector<reg_data_t>& rd_data,
+                      ExeTraceData* trace_data) {
+  impl_->spmma(wid, fmt_s, fmt_d, step_m, step_n, rs1_data, rs2_data, rs3_data, rd_data, trace_data);
 }
