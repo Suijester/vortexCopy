@@ -196,6 +196,59 @@ static PFN_FEDP select_FEDP(uint32_t IT, uint32_t OT) {
   }
 }
 
+/* template <typename It>
+struct PRUNE {
+  using itype = typename It::dtype;
+  using dtype = typename Ot::dtype;
+  std::vector<reg_data_t> prune(std::vector<reg_data_t>& rs1_data)  {
+    constexpr uint32_t i_ratio = sizeof(uint32_t) / sizeof(itype); // number of input values that fit into each register
+    static_assert(i_ratio * sizeof(itype) == sizeof(uint32_t), "PRUNE: tcK * i_ratio must be <= 32");
+
+    pruned_rs1_data.reserve(rs1_data.size() / 2); // 2:4 sparsity guarantees that pruned_rs1_data will be half of rs1_data
+    rs4_metadata.reserve(cfg::tcM); // reserve the number of rows in matrix A
+
+    const uint32_t values_per_row = i_ratio * cfg::tcK;
+
+    for (int rows = 0; rows < cfg::tcM; rows++) {
+      auto row_packed = &rs1_data[row * cfg::tcK]; // pointer to packed data of the row
+      auto row_data = reinterpret_cast<const itype *>(&row_packed[0].u32); // convert 
+      uint32_t bitmask = 0;
+
+      for (int group = 0; group < values_per_row; group += 4) {
+        bool pruned_positions[4] = {false, false, false, false};
+        uint32_t pruned_count = 0; // number of pruned values (until we reach 2:4)
+      }
+    }
+  }
+}
+
+std::vector<reg_data_t> prune(std::vector<reg_data_t>& rs1_data) {
+  std::vector<reg_data_t> rs4_metadata;
+  std::vector<reg_data_t> pruned_rs1_data;
+
+  pruned_rs1_data.reserve(rs1_data.size() / 2); // 2:4 sparsity guarantees that pruned_rs1_data will be half of rs1_data
+  rs4_metadata.reserve(cfg::tcM); // reserve the number of rows in matrix A
+
+  for (int i = 0; i < cfg::tcM; i++) {
+    uint32_t bitmask = 0;
+
+    for (int group = 0; group < cfg::tcM; group += 4) {
+      bool pruned_positions[4] = {false, false, false, false};
+      uint32_t pruned_count = 0; // number of pruned values (until we reach 2:4)
+
+      for (int j = 0; j < 4 && pruned < 2; j++) {
+        uint32_t column_index = group + j;
+        if (column_index >= cfg::tcK) break; // in case we reach past row size
+
+        auto& value = rs1_data[(i * cfg::tcK + column_index)]; // flatten 2D matrix to 1D (can index any value by row_number * row_length + column_number)
+        if (value.u32 == 0) {
+
+        }
+      }
+    }
+  }
+} */
+
 class TensorUnit::Impl {
 public:
   Impl(TensorUnit* simobject, const Arch& arch, Core* core)
