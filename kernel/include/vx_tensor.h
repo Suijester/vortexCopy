@@ -411,7 +411,7 @@ template <uint32_t NT, // number of threads per warp
           typename Ot> // output type (C,D)
 struct spmma_context {
 private:
-  using cfg = spmma_config_t<NT>;
+  using cfg = spmma_config_t<NT, It, Ot>;
 
   enum frag_use_t { pruned_matrix_a, metadata, matrix_b, accumulator }; // additional metadata fragment
 
@@ -440,8 +440,9 @@ public:
   static constexpr uint32_t tileN = cfg::tileN;
   static constexpr uint32_t tileK = cfg::tileK * i_ratio;
 
+  using meta_t             = uint32_t; // metadata type (32 bits)
   using fragment_a         = fragment_t<pruned_matrix_a, input_t, cfg::NRSA>;
-  using fragment_metadata  = fragment_t<metadata, input_t, cfg::NRM>;
+  using fragment_metadata  = fragment_t<metadata, meta_t, cfg::NRM>;
   using fragment_b         = fragment_t<matrix_b, input_t, cfg::NRB>;
   using fragment_acc       = fragment_t<accumulator, output_t, cfg::NRC>;
 
@@ -498,23 +499,11 @@ public:
         }
       });
     } else if constexpr (Frag::Use == metadata) {
-      uint32_t block_idx = (cfg::a_block_size == NT) ? 0 : (lane / cfg::a_block_size);
-      uint32_t lane_in_blk = (cfg::a_block_size == NT) ? lane : (lane % cfg::a_block_size);
-
-      uint32_t block_row = (lane_in_blk / cfg::tcK) + (block_idx * cfg::tcM);
-      uint32_t row_stride  = cfg::a_sub_blocks * cfg::tcM;
-
-      auto meta_base = reinterpret_cast<const input_t*>(src);
+      // Load row-major metadata (simple contiguous array)
+      auto meta_base = reinterpret_cast<const meta_t*>(src);
       detail::unroll_for<Frag::NR>([&](auto r) {
-        uint32_t row = block_row + r * row_stride;
-        auto ptr = meta_base + row * ldm;
-
-        if constexpr (sizeof(vreg_t) == sizeof(input_t) && !input_is_subbyte) {
-          dst.data[r] = *reinterpret_cast<const vreg_t*>(ptr);
-        } else {
-          input_t metadata_val = *ptr;
-          dst.data[r] = input_acessor_t::bit_fill(metadata_val);
-        }
+        static_assert(sizeof(vreg_t) == sizeof(meta_t), "SPMMA: metadata type meta_t must be 32 bits to fit within vreg_t");
+        dst.data[r] = *reinterpret_cast<const vreg_t*>(ptr);
       });
     } else if constexpr (Frag::Use == matrix_b) {
       // Load column-major matrix B
