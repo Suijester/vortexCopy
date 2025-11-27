@@ -411,7 +411,7 @@ template <uint32_t NT, // number of threads per warp
           typename Ot> // output type (C,D)
 struct spmma_context {
 private:
-  using cfg = spmma_config_t<NT, It, Ot>;
+  using cfg = spmma_config_t<NT>;
 
   enum frag_use_t { pruned_matrix_a, metadata, matrix_b, accumulator }; // additional metadata fragment
 
@@ -492,7 +492,7 @@ public:
             dst.data[r] = input_acessor_t::pack_row(ptr, ldm);
           }
         } else {
-          // raw_major layout
+          // row_major layout
           auto ptr = base + elem_row * ldm + elem_col;
           assert(reinterpret_cast<uintptr_t>(ptr) % alignof(vreg_t) == 0 && "pointer must be aligned to 4 bytes");
           dst.data[r] = *reinterpret_cast<const vreg_t *>(ptr);
@@ -502,6 +502,7 @@ public:
       // Load row-major metadata (simple contiguous array)
       auto meta_base = reinterpret_cast<const meta_t*>(src);
       detail::unroll_for<Frag::NR>([&](auto r) {
+        auto ptr = meta_base + r;
         static_assert(sizeof(vreg_t) == sizeof(meta_t), "SPMMA: metadata type meta_t must be 32 bits to fit within vreg_t");
         dst.data[r] = *reinterpret_cast<const vreg_t*>(ptr);
       });
