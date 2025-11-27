@@ -84,6 +84,32 @@ struct FMA<vt::bf16, vt::bf16> {
 };
 
 template <typename It, typename Ot>
+struct sparse_FEDP {
+  using itype = typename It::dtype;
+  using otype = typename Ot::dtype;
+  static uint32_t eval(const reg_data_t *a_row, const reg_data_t *b_col, const reg_data_t *metadata, uint32_t c_val) {
+    constexpr uint32_t i_ratio = sizeof(uint32_t) / sizeof(itype);
+    static_assert(i_ratio * sizeof(itype) == sizeof(uint32_t), "FEDP: tcK * i_ratio must be <= 32");
+
+    constexpr uint32_t num_values = i_ratio * cfg::tcK;
+    static_assert(num_values <= 32, "Sparse FEDP/SPMMA: Only 32 bit metadata is supported, K Values is at most 32.");
+
+    auto acc = bit_cast<otype>(c_val);
+    uint32_t bitmask = metadata->u32;
+    auto a = reinterpret_cast<const itype *>(&a_row[0].u32);
+    auto b = reinterpret_cast<const itype *>(&b_column[0].u32);
+    uint32_t i = 0; // represents index of pruned a; only increment if it's multiplied to something in b
+    for (uint32_t z = 0; z < num_values; ++z) {
+      uint8_t low_bit = (bitmask >> z) & 1;
+      if (!low_bit) continue;
+      acc = FMA<It, Ot>::eval(a[i], b[z], acc); // reuse same FMAs
+      i++;
+    }
+    return bit_cast<uint32_t>(acc);
+  }
+};
+
+template <typename It, typename Ot>
 struct FEDP {
   using itype = typename It::dtype;
   using otype = typename Ot::dtype;
