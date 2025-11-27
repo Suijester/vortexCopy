@@ -97,7 +97,7 @@ struct sparse_FEDP {
     auto acc = bit_cast<otype>(c_val);
     uint32_t bitmask = metadata->u32;
     auto a = reinterpret_cast<const itype *>(&a_row[0].u32);
-    auto b = reinterpret_cast<const itype *>(&b_column[0].u32);
+    auto b = reinterpret_cast<const itype *>(&b_col[0].u32);
     uint32_t i = 0; // represents index of pruned a; only increment if it's multiplied to something in b
     for (uint32_t z = 0; z < num_values; ++z) {
       uint8_t low_bit = (bitmask >> z) & 1;
