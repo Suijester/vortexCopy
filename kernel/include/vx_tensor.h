@@ -497,6 +497,25 @@ public:
           dst.data[r] = *reinterpret_cast<const vreg_t *>(ptr);
         }
       });
+    } else if constexpr (Frag::Use == metadata) {
+      uint32_t block_idx = (cfg::a_block_size == NT) ? 0 : (lane / cfg::a_block_size);
+      uint32_t lane_in_blk = (cfg::a_block_size == NT) ? lane : (lane % cfg::a_block_size);
+
+      uint32_t block_row = (lane_in_blk / cfg::tcK) + (block_idx * cfg::tcM);
+      uint32_t row_stride  = cfg::a_sub_blocks * cfg::tcM;
+
+      auto meta_base = reinterpret_cast<const input_t*>(src);
+      detail::unroll_for<Frag::NR>([&](auto r) {
+        uint32_t row = block_row + r * row_stride;
+        auto ptr = meta_base + row * ldm;
+
+        if constexpr (sizeof(vreg_t) == sizeof(input_t) && !input_is_subbyte) {
+          dst.data[r] = *reinterpret_cast<const vreg_t*>(ptr);
+        } else {
+          input_t metadata_val = *ptr;
+          dst.data[r] = input_acessor_t::bit_fill(metadata_val);
+        }
+      });
     } else if constexpr (Frag::Use == matrix_b) {
       // Load column-major matrix B
       uint32_t block_idx = (cfg::b_block_size == NT) ? 0 : (lane / cfg::b_block_size);
