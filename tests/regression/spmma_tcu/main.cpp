@@ -236,24 +236,6 @@ public:
 };
 
 template <>
-class Comparator<vt::tf32> {
-public:
-  static uint32_t generate() {
-    auto fvalue = float(rand()) / RAND_MAX;
-    return rv_ftox_s(bit_cast<uint32_t>(fvalue), 8, 10, 0, nullptr);
-  }
-  static bool compare(uint32_t a, uint32_t b, int index, int errors) {
-    if (a != b) {
-      if (errors < MAX_ERRORS) {
-        printf("*** error: [%d] expected=0x%x, actual=0x%x\n", index, b, a);
-      }
-      return false;
-    }
-    return true;
-  }
-};
-
-template <>
 class Comparator<vt::fp32> {
 public:
   static float generate() {
@@ -326,15 +308,6 @@ struct muladd_t<vt::bf16, vt::bf16> {
     auto fc = bit_cast<float>(rv_btof_s(c, 0, nullptr));
     auto fd = fa * fb + fc;
     return rv_ftob_s(bit_cast<uint32_t>(fd), 0, nullptr);
-  }
-};
-
-template <>
-struct muladd_t<vt::tf32, vt::fp32> {
-  static float eval(uint32_t a, uint32_t b, float c) {
-    auto fa = bit_cast<float>(rv_xtof_s(a, 8, 10, 0, nullptr));
-    auto fb = bit_cast<float>(rv_xtof_s(b, 8, 10, 0, nullptr));
-    return fa * fb + c;
   }
 };
 
