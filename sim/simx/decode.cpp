@@ -1113,9 +1113,10 @@ void Emulator::decode(uint32_t code, uint32_t wid, uint64_t uuid) {
           }
         }
       } break;
+      // SPMMA is not modified; rs1 is the combination of pruned_matrix_A and metadata
       case 1: { // SPMMA (funct3 = 1)
         namespace vt = vortex::tensor;
-        using cfg = vt::wmma_config_t<NUM_THREADS>; // allow wmma_config_t, since it's essentially the same configuration
+        using cfg = vt::spmma_config_t<NUM_THREADS>; // using the new spmma_config_t
         uint32_t ra_base = 0;
         uint32_t rb_base = (cfg::NRB == 4) ? 28 : 10;
         uint32_t rc_base = (cfg::NRB == 4) ? 10 : 24;
